@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 
 from env_loader import env_flag_enabled, load_env
-from main import preguntar
+from main import MENSAJE_COMANDOS, preguntar
 from openclaw_guard import require_openclaw_ready
 
 import os
@@ -148,13 +148,7 @@ def handle_message(token, message):
         send_message(
             token,
             chat_id,
-            "Ejemplos:\n"
-            "- cuantos productos hay\n"
-            "- ventas de hoy\n"
-            "- iniciar dia\n"
-            "- productos en talla M\n"
-            "- productos en color negro\n"
-            "- producto mas vendido",
+            MENSAJE_COMANDOS,
         )
         return
 

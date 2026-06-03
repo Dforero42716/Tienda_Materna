@@ -77,6 +77,28 @@ FORMATO_VENTA = (
     "Ejemplo: vender 2 blusa lactancia manga larga"
 )
 
+MENSAJE_COMANDOS = (
+    "Hola, soy Mundo Materno. Puedes escribirme:\n"
+    "- cuantos productos hay\n"
+    "- ventas de hoy\n"
+    "- categorias\n"
+    "- productos en talla M\n"
+    "- productos en color negro\n"
+    "- producto mas vendido\n"
+    "- registrar venta\n"
+    "- vender 2 blusa lactancia"
+)
+
+SALUDOS = {
+    "hola",
+    "buenas",
+    "buenos dias",
+    "buen dia",
+    "buenas tardes",
+    "buenas noches",
+    "hey",
+}
+
 
 def _extraer_cantidad_y_nombre(texto, comandos, ejemplo):
     partes = texto
@@ -179,6 +201,9 @@ def preguntar(mensaje):
 
     if not texto:
         return "Escribe una pregunta o comando."
+
+    if texto in SALUDOS or texto in {"menu", "ayuda", "comandos"}:
+        return MENSAJE_COMANDOS
 
     # AGREGAR STOCK
     if texto.startswith("agregar stock") or texto.startswith("agregar unidades"):
