@@ -1,9 +1,9 @@
 import argparse
 import json
-import os
+import re
 import sys
 
-from env_loader import load_env
+from env_loader import env_flag_enabled, load_env
 from main import preguntar
 
 load_env()
@@ -24,7 +24,14 @@ MUTATING_PREFIXES = (
 
 def is_mutating(texto):
     texto = texto.lower().strip()
-    return any(texto.startswith(prefix) for prefix in MUTATING_PREFIXES)
+    if any(texto.startswith(prefix) for prefix in MUTATING_PREFIXES):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:quiero\s+)?(?:(?:registrar|hacer|anotar|crear)\s+(?:una\s+)?venta|vender)\b\s+(?:de\s+)?\d+\b",
+            texto,
+        )
+    )
 
 
 def main():
@@ -39,7 +46,7 @@ def main():
         payload = json.load(sys.stdin)
         command = str(payload.get("command", "")).strip()
 
-    allow_mutations = args.allow_mutations or os.environ.get("MUNDO_MATERNO_ALLOW_MUTATIONS") == "1"
+    allow_mutations = args.allow_mutations or env_flag_enabled("MUNDO_MATERNO_ALLOW_MUTATIONS")
     if is_mutating(command) and not allow_mutations:
         result = {
             "ok": False,

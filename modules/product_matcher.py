@@ -5,6 +5,20 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from database import get_connection
 
+PALABRAS_IGNORADAS = {
+    "agregar",
+    "anotar",
+    "crear",
+    "hacer",
+    "quiero",
+    "registrar",
+    "stock",
+    "una",
+    "unidades",
+    "venta",
+    "vender",
+}
+
 
 def _normalizar(texto: str):
     texto = texto.lower().strip()
@@ -17,7 +31,11 @@ def buscar_producto_inteligente(texto: str):
     c = conn.cursor()
     texto_limpio = texto.lower().strip()
     texto_normalizado = _normalizar(texto_limpio)
-    palabras = [p for p in texto_normalizado.split() if len(p) >= 3]
+    palabras = [
+        p
+        for p in texto_normalizado.split()
+        if len(p) >= 3 and p not in PALABRAS_IGNORADAS
+    ]
 
     if len(texto_limpio) < 3 or not palabras:
         conn.close()

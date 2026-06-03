@@ -2,11 +2,12 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+import re
 import time
 import urllib.parse
 import urllib.request
 
-from env_loader import load_env
+from env_loader import env_flag_enabled, load_env
 from main import preguntar
 from openclaw_guard import require_openclaw_ready
 
@@ -80,7 +81,14 @@ def describe_message(message):
 
 def is_mutating_command(text):
     normalized = text.lower().strip()
-    return any(normalized.startswith(prefix) for prefix in MUTATING_PREFIXES)
+    if any(normalized.startswith(prefix) for prefix in MUTATING_PREFIXES):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:quiero\s+)?(?:(?:registrar|hacer|anotar|crear)\s+(?:una\s+)?venta|vender)\b\s+(?:de\s+)?\d+\b",
+            normalized,
+        )
+    )
 
 
 def telegram_request(token, method, payload=None):
@@ -150,7 +158,7 @@ def handle_message(token, message):
         )
         return
 
-    if is_mutating_command(text) and os.environ.get("MUNDO_MATERNO_ALLOW_MUTATIONS") != "1":
+    if is_mutating_command(text) and not env_flag_enabled("MUNDO_MATERNO_ALLOW_MUTATIONS"):
         logger.warning("Blocked mutating command context=%s text=%r", context, text)
         send_message(
             token,

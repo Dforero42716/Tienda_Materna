@@ -71,6 +71,12 @@ MENU = """
 +==================================================+
 """
 
+FORMATO_VENTA = (
+    "Para registrar una venta necesito:\n"
+    "  vender [cantidad] [nombre del producto]\n\n"
+    "Ejemplo: vender 2 blusa lactancia manga larga"
+)
+
 
 def _extraer_cantidad_y_nombre(texto, comandos, ejemplo):
     partes = texto
@@ -89,6 +95,45 @@ def _extraer_cantidad_y_nombre(texto, comandos, ejemplo):
         return None, None, "La cantidad debe ser mayor que cero."
     if not nombre:
         return None, None, ejemplo
+    return cantidad, nombre, None
+
+
+def _es_intencion_venta(texto):
+    if texto.startswith("vender") or texto.startswith("registrar venta"):
+        return True
+    patrones = (
+        r"\b(?:quiero\s+)?(?:registrar|hacer|anotar|crear)\s+(?:una\s+)?venta\b",
+        r"\b(?:quiero\s+)?vender\b",
+    )
+    return any(re.search(patron, texto) for patron in patrones)
+
+
+def _extraer_venta(texto):
+    if texto.startswith("vender") or texto.startswith("registrar venta"):
+        return _extraer_cantidad_y_nombre(
+            texto,
+            ("registrar venta", "vender"),
+            FORMATO_VENTA,
+        )
+
+    match = re.search(
+        r"\b(?:quiero\s+)?(?:(?:registrar|hacer|anotar|crear)\s+(?:una\s+)?venta|vender)\b",
+        texto,
+    )
+    partes = texto[match.end():].strip() if match else ""
+    if partes.startswith("de "):
+        partes = partes[3:].strip()
+
+    match_cantidad = re.fullmatch(r"(\d+)\s+(.+)", partes)
+    if not match_cantidad:
+        return None, None, FORMATO_VENTA
+
+    cantidad = int(match_cantidad.group(1))
+    nombre = match_cantidad.group(2).strip()
+    if cantidad <= 0:
+        return None, None, "La cantidad debe ser mayor que cero."
+    if not nombre:
+        return None, None, FORMATO_VENTA
     return cantidad, nombre, None
 
 
@@ -163,16 +208,8 @@ def preguntar(mensaje):
         )
 
     # VENTAS
-    if texto.startswith("vender") or texto.startswith("registrar venta"):
-        cantidad, nombre, error = _extraer_cantidad_y_nombre(
-            texto,
-            ("registrar venta", "vender"),
-            (
-                "Para registrar una venta necesito:\n"
-                "  vender [cantidad] [nombre del producto]\n\n"
-                "Ejemplo: vender 2 blusa lactancia manga larga"
-            ),
-        )
+    if _es_intencion_venta(texto):
+        cantidad, nombre, error = _extraer_venta(texto)
         if error:
             return error
 
