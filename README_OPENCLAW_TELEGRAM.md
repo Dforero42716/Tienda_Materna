@@ -29,6 +29,21 @@ MUNDO_MATERNO_ALLOW_MUTATIONS=0
 
 That lets users ask inventory questions, but blocks commands that change data, like sales, stock updates, `iniciar dia`, and `cerrar dia`.
 
+Choose one database option in `.env`.
+
+Option A, SQLite:
+
+```env
+MUNDO_MATERNO_DB_ENGINE=sqlite
+```
+
+Option B, PostgreSQL:
+
+```env
+MUNDO_MATERNO_DB_ENGINE=postgres
+DATABASE_URL=postgresql://user:password@localhost:5432/mundo_materno
+```
+
 ## 2. Check OpenClaw
 
 Run these from any PowerShell terminal:
@@ -257,16 +272,28 @@ cerrar dia
 
 ## 10. Initialize Or Repair The Database
 
-SQLite is the default:
+Choose one database path.
+
+### Option A: SQLite
+
+SQLite is the simplest option for one local machine.
+
+In `.env`:
+
+```env
+MUNDO_MATERNO_DB_ENGINE=sqlite
+```
+
+Initialize or repair it:
 
 ```powershell
 cd D:\Coding\GestInvMundoMaterno\Tienda_Materna
 python database.py
 ```
 
-## 11. PostgreSQL Mode
+### Option B: PostgreSQL
 
-SQLite remains the default. To use PostgreSQL, install the optional driver:
+PostgreSQL is better for shared/server use. Install the optional driver:
 
 ```powershell
 pip install "psycopg[binary]"
@@ -291,7 +318,7 @@ Migrate existing SQLite data:
 python scripts/migrate_sqlite_to_postgres.py --truncate
 ```
 
-## 12. Manual OpenClaw Bridge Test
+## 11. Manual OpenClaw Bridge Test
 
 You can test the inventory bridge directly:
 

@@ -76,6 +76,21 @@ MUNDO_MATERNO_ALLOW_MUTATIONS=0
 
 Set it to `1` only if trusted users are allowed to run commands that change inventory, sales, or the day status.
 
+Choose one database option in `.env`.
+
+Option A, SQLite:
+
+```env
+MUNDO_MATERNO_DB_ENGINE=sqlite
+```
+
+Option B, PostgreSQL:
+
+```env
+MUNDO_MATERNO_DB_ENGINE=postgres
+DATABASE_URL=postgresql://user:password@localhost:5432/mundo_materno
+```
+
 ## 5. Configure OpenClaw
 
 OpenClaw is mandatory for this project. The app will not answer if OpenClaw is missing or stopped.
@@ -105,7 +120,19 @@ If OpenClaw does not see the skill, update the local OpenClaw config so its work
 
 ## 6. Initialize The Database
 
-SQLite is the default:
+Choose one path.
+
+### Option A: SQLite
+
+SQLite is the easiest local option. It stores data in `inventario.db`.
+
+In `.env`:
+
+```env
+MUNDO_MATERNO_DB_ENGINE=sqlite
+```
+
+Initialize it:
 
 ```powershell
 python database.py
@@ -117,7 +144,11 @@ This creates or repairs:
 inventario.db
 ```
 
-For PostgreSQL, install the optional driver:
+### Option B: PostgreSQL
+
+PostgreSQL is better for a server, shared use, or future deployment.
+
+Install the optional driver:
 
 ```powershell
 pip install "psycopg[binary]"
