@@ -1,3 +1,9 @@
+---
+name: mundo-materno-inventory
+description: Use this skill for every Mundo Materno inventory, sales, stock, provider, category, price, daily close, or replenishment request.
+user-invocable: true
+---
+
 # Mundo Materno Inventory
 
 Use this skill for every Mundo Materno inventory, sales, stock, provider, category, price, daily close, or replenishment request.
