@@ -1,6 +1,6 @@
 # Mundo Materno Telegram Bot With Required OpenClaw
 
-OpenClaw is now mandatory for this project. If OpenClaw is not installed, its config is invalid, the `mundo-materno-inventory` skill is missing, or the gateway is not running, the inventory program refuses to answer.
+OpenClaw is mandatory for this project. If OpenClaw is not installed, its config is invalid, the `mundo-materno-inventory` skill is missing, or the gateway is not running, the inventory program refuses to answer.
 
 The Telegram messages are still handled by `telegram_inventory_bot.py`, but every inventory request goes through the OpenClaw readiness gate before `main.preguntar()` runs.
 
