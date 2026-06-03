@@ -1,8 +1,10 @@
 import asyncio
 from datetime import date
 from browser_use import Agent, Browser, BrowserConfig
-from langchain_ollama import ChatOllama
+import os
+from langchain_openai import ChatOpenAI
 
+from env_loader import load_env
 from modules.analisis import (
     total_productos,
     producto_mas_caro,
@@ -10,8 +12,18 @@ from modules.analisis import (
     valor_total_inventario,
 )
 
+load_env()
+
 async def responder_instagram():
-    llm = ChatOllama(model="llama3-groq-tool-use")
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise RuntimeError("Configura DEEPSEEK_API_KEY en .env antes de iniciar el agente.")
+
+    llm = ChatOpenAI(
+        model=os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro"),
+        api_key=api_key,
+        base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+    )
 
     contexto_inventario = f"""
 Eres el asistente de ventas de Mundo Materno, tienda de ropa materna.

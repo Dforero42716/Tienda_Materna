@@ -1,0 +1,8 @@
+# Core app uses the Python standard library with SQLite.
+#
+# Optional PostgreSQL support:
+psycopg[binary]>=3.2
+
+# Existing Instagram/OpenClaw-adjacent agent integrations may also need:
+browser-use
+langchain-openai

@@ -3,7 +3,7 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from database import get_connection
-from datetime import date
+from datetime import date, datetime, timedelta
 
 def stock_total():
     conn = get_connection()
@@ -247,12 +247,13 @@ def producto_mas_vendido():
 def historial_semana():
     conn = get_connection()
     c = conn.cursor()
+    desde = (date.today() - timedelta(days=7)).isoformat()
     c.execute("""
         SELECT DISTINCT fecha_venta
         FROM Ventas
-        WHERE fecha_venta >= date('now', '-7 days')
+        WHERE fecha_venta >= ?
         ORDER BY fecha_venta DESC
-    """)
+    """, (desde,))
     fechas = [row[0] for row in c.fetchall()]
     conn.close()
     return fechas
@@ -260,25 +261,27 @@ def historial_semana():
 def alertas_reposicion():
     conn = get_connection()
     c = conn.cursor()
+    hoy = date.today().isoformat()
+    desde = (date.today() - timedelta(days=7)).isoformat()
 
     c.execute("""
         SELECT p.nombre, p.id_producto, SUM(v.cantidad) as total_hoy
         FROM Ventas v
         JOIN Productos p ON v.id_producto = p.id_producto
-        WHERE v.fecha_venta = date('now')
+        WHERE v.fecha_venta = ?
         GROUP BY v.id_producto
         HAVING total_hoy >= 3
-    """)
+    """, (hoy,))
     demanda_alta_hoy = c.fetchall()
 
     c.execute("""
         SELECT p.nombre, p.id_producto, SUM(v.cantidad) as total_semana
         FROM Ventas v
         JOIN Productos p ON v.id_producto = p.id_producto
-        WHERE v.fecha_venta >= date('now', '-7 days')
+        WHERE v.fecha_venta >= ?
         GROUP BY v.id_producto
         HAVING total_semana >= 10
-    """)
+    """, (desde,))
     demanda_alta_semana = c.fetchall()
 
     c.execute("""
@@ -294,10 +297,56 @@ def alertas_reposicion():
     conn.close()
     return demanda_alta_hoy, demanda_alta_semana, sin_ventas
 
+def iniciar_dia():
+    conn = get_connection()
+    c = conn.cursor()
+    hoy = date.today().isoformat()
+    ahora = datetime.now().isoformat(timespec="seconds")
+
+    c.execute("SELECT SUM(stock * precio_mayorista) FROM Productos")
+    capital = c.fetchone()[0] or 0.0
+
+    c.execute("SELECT COUNT(*) FROM Ventas WHERE fecha_venta = ?", (hoy,))
+    ventas_iniciales = c.fetchone()[0] or 0
+
+    c.execute("SELECT fecha, inicio, estado FROM Dia_Operativo WHERE fecha = ?", (hoy,))
+    existe = c.fetchone()
+
+    if existe:
+        conn.close()
+        return {
+            "fecha": existe[0],
+            "inicio": existe[1],
+            "estado": existe[2],
+            "capital_inicial": capital,
+            "ventas_iniciales": ventas_iniciales,
+            "ya_existia": True,
+        }
+
+    c.execute("""
+        INSERT INTO Dia_Operativo (
+            fecha, inicio, cierre, capital_inicial, capital_final,
+            ventas_iniciales, ventas_finales, estado
+        )
+        VALUES (?, ?, NULL, ?, NULL, ?, NULL, ?)
+    """, (hoy, ahora, capital, ventas_iniciales, "abierto"))
+
+    conn.commit()
+    conn.close()
+    return {
+        "fecha": hoy,
+        "inicio": ahora,
+        "estado": "abierto",
+        "capital_inicial": capital,
+        "ventas_iniciales": ventas_iniciales,
+        "ya_existia": False,
+    }
+
 def cerrar_dia():
     conn = get_connection()
     c = conn.cursor()
     hoy = date.today().isoformat()
+    ahora = datetime.now().isoformat(timespec="seconds")
 
     c.execute("""
         SELECT COUNT(*), SUM(precio_venta), SUM(ganancia)
@@ -351,6 +400,23 @@ def cerrar_dia():
             INSERT INTO Historial_Mensual
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (hoy, ventas, ingresos, ganancias, producto_top, producto_menos, capital))
+
+    c.execute("SELECT fecha FROM Dia_Operativo WHERE fecha = ?", (hoy,))
+    dia_existe = c.fetchone()
+    if dia_existe:
+        c.execute("""
+            UPDATE Dia_Operativo
+            SET cierre=?, capital_final=?, ventas_finales=?, estado=?
+            WHERE fecha=?
+        """, (ahora, capital, ventas, "cerrado", hoy))
+    else:
+        c.execute("""
+            INSERT INTO Dia_Operativo (
+                fecha, inicio, cierre, capital_inicial, capital_final,
+                ventas_iniciales, ventas_finales, estado
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (hoy, ahora, ahora, capital, capital, 0, ventas, "cerrado"))
 
     conn.commit()
     conn.close()

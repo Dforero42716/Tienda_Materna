@@ -19,6 +19,8 @@ def buscar_producto_por_nombre(nombre: str):
     return resultado
 
 def actualizar_stock(id_producto: str, nuevo_stock: int):
+    if nuevo_stock < 0:
+        raise ValueError("El stock no puede ser negativo.")
     conn = get_connection()
     c = conn.cursor()
     c.execute("UPDATE Productos SET stock = ? WHERE id_producto = ?", (nuevo_stock, id_producto))
@@ -26,24 +28,59 @@ def actualizar_stock(id_producto: str, nuevo_stock: int):
     conn.close()
 
 def agregar_stock(id_producto: str, cantidad: int):
+    if cantidad <= 0:
+        raise ValueError("La cantidad debe ser mayor que cero.")
     conn = get_connection()
     c = conn.cursor()
     c.execute("UPDATE Productos SET stock = stock + ? WHERE id_producto = ?", (cantidad, id_producto))
     conn.commit()
     conn.close()
 
-def registrar_venta(id_producto: str, cantidad: int, precio_detal: float, precio_mayorista: float):
+def registrar_venta(id_producto: str, cantidad: int):
+    if cantidad <= 0:
+        raise ValueError("La cantidad debe ser mayor que cero.")
+
     conn = get_connection()
-    c = conn.cursor()
-    precio_venta = precio_detal * cantidad
-    ganancia = (precio_detal - precio_mayorista) * cantidad
-    c.execute("""
-        INSERT INTO Ventas (id_producto, cantidad, fecha_venta, precio_venta, ganancia)
-        VALUES (?, ?, ?, ?, ?)
-    """, (id_producto, cantidad, date.today().isoformat(), precio_venta, ganancia))
-    conn.commit()
-    conn.close()
-    return ganancia
+    try:
+        c = conn.cursor()
+        c.execute("""
+            SELECT nombre, stock, precio_detal, precio_mayorista
+            FROM Productos
+            WHERE id_producto = ?
+        """, (id_producto,))
+        producto = c.fetchone()
+
+        if not producto:
+            raise ValueError("Producto no encontrado.")
+
+        nombre, stock, precio_detal, precio_mayorista = producto
+        if stock < cantidad:
+            raise ValueError(f"Stock insuficiente. Solo hay {stock} unidades de {nombre}.")
+
+        precio_venta = precio_detal * cantidad
+        ganancia = (precio_detal - precio_mayorista) * cantidad
+        stock_restante = stock - cantidad
+
+        c.execute("UPDATE Productos SET stock = ? WHERE id_producto = ?", (stock_restante, id_producto))
+        c.execute("""
+            INSERT INTO Ventas (id_producto, cantidad, fecha_venta, precio_venta, ganancia)
+            VALUES (?, ?, ?, ?, ?)
+        """, (id_producto, cantidad, date.today().isoformat(), precio_venta, ganancia))
+        conn.commit()
+
+        return {
+            "nombre": nombre,
+            "cantidad": cantidad,
+            "stock_anterior": stock,
+            "stock_restante": stock_restante,
+            "precio_venta": precio_venta,
+            "ganancia": ganancia,
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 def buscar_similares(texto: str):
     conn = get_connection()

@@ -1,0 +1,47 @@
+{
+  // Copy the relevant parts into ~/.openclaw/openclaw.json.
+  // Keep Telegram locked down to numeric user IDs for a private store assistant.
+  channels: {
+    telegram: {
+      enabled: true,
+      // Read this value from .env / service environment if your OpenClaw build supports env expansion.
+      // Otherwise paste it here only on your private machine.
+      botToken: "${TELEGRAM_BOT_TOKEN}",
+      dmPolicy: "allowlist",
+      allowFrom: ["${TELEGRAM_ALLOWED_USER_ID}"],
+      groupPolicy: "allowlist",
+      groups: {
+        // Replace with a real group id like "-1001234567890", or remove groups if you only want DMs.
+        "${TELEGRAM_GROUP_CHAT_ID}": {
+          requireMention: true,
+          allowFrom: ["${TELEGRAM_ALLOWED_USER_ID}"],
+        },
+      },
+    },
+  },
+
+  agents: {
+    defaults: {
+      // The bridge is a local command, so keep runtime tools available but use OpenClaw approvals.
+      tools: {
+        allow: ["exec"],
+      },
+      skills: {
+        paths: [
+          "D:/Coding/GestInvMundoMaterno/Tienda_Materna/openclaw/mundo-materno-inventory",
+        ],
+      },
+      env: {
+        // The Python bridge also reads Tienda_Materna/.env directly.
+        // Keep real secrets in .env, not in this example file.
+        MUNDO_MATERNO_ALLOW_MUTATIONS: "${MUNDO_MATERNO_ALLOW_MUTATIONS}",
+        DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY}",
+        DEEPSEEK_MODEL: "${DEEPSEEK_MODEL}",
+        DEEPSEEK_BASE_URL: "${DEEPSEEK_BASE_URL}",
+        MUNDO_MATERNO_DB_ENGINE: "${MUNDO_MATERNO_DB_ENGINE}",
+        DATABASE_URL: "${DATABASE_URL}",
+      },
+      workspace: "D:/Coding/GestInvMundoMaterno/Tienda_Materna",
+    },
+  },
+}
