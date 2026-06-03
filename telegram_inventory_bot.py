@@ -8,6 +8,7 @@ import urllib.request
 
 from env_loader import load_env
 from main import preguntar
+from openclaw_guard import require_openclaw_ready
 
 import os
 
@@ -120,6 +121,13 @@ def handle_message(token, message):
         send_message(token, chat_id, "Escribe una consulta de inventario.")
         return
 
+    try:
+        require_openclaw_ready()
+    except RuntimeError as exc:
+        logger.error("OpenClaw dependency blocked request context=%s error=%s", context, exc)
+        send_message(token, chat_id, str(exc))
+        return
+
     if text.startswith("/start"):
         send_message(
             token,
@@ -160,6 +168,9 @@ def main():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
         raise RuntimeError("Configura TELEGRAM_BOT_TOKEN en .env.")
+
+    openclaw_status = require_openclaw_ready()
+    logger.info("OpenClaw dependency ready: %s", openclaw_status)
 
     me = telegram_request(token, "getMe")
     username = me.get("result", {}).get("username", "desconocido")

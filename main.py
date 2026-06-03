@@ -28,6 +28,7 @@ from modules.analisis import (
     iniciar_dia,
     cerrar_dia,
 )
+from openclaw_guard import require_openclaw_ready
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -127,6 +128,8 @@ def _responder_no_encontrado(nombre, con_precio=False):
 
 
 def preguntar(mensaje):
+    require_openclaw_ready()
+
     texto = _normalizar_comandos(mensaje.lower().strip())
 
     if not texto:

@@ -1,8 +1,8 @@
-# Mundo Materno Telegram Bot
+# Mundo Materno Telegram Bot With Required OpenClaw
 
-This project can answer inventory questions from Telegram using `telegram_inventory_bot.py`.
+OpenClaw is now mandatory for this project. If OpenClaw is not installed, its config is invalid, the `mundo-materno-inventory` skill is missing, or the gateway is not running, the inventory program refuses to answer.
 
-The bot uses the same command router as the local CLI: `main.preguntar()`. It does **not** calculate totals from logs. Logs are only an audit trail. Inventory, sales, stock, day open/close, and totals come from the database.
+The Telegram messages are still handled by `telegram_inventory_bot.py`, but every inventory request goes through the OpenClaw readiness gate before `main.preguntar()` runs.
 
 ## 1. Configure `.env`
 
@@ -29,27 +29,71 @@ MUNDO_MATERNO_ALLOW_MUTATIONS=0
 
 That lets users ask inventory questions, but blocks commands that change data, like sales, stock updates, `iniciar dia`, and `cerrar dia`.
 
-## 2. Start The Bot
+## 2. Check OpenClaw
 
-Run:
+Run these from any PowerShell terminal:
+
+```powershell
+openclaw --version
+openclaw config validate
+openclaw skills list --eligible
+```
+
+The skills list must include:
+
+```text
+mundo-materno-inventory
+```
+
+If `openclaw` is not recognized, install it first:
+
+```powershell
+npm install -g openclaw
+```
+
+## 3. Start OpenClaw
+
+Start the gateway before starting the bot:
+
+```powershell
+openclaw gateway run
+```
+
+Leave that terminal open. The current project expects the gateway to listen locally, usually on:
+
+```text
+127.0.0.1:30000
+```
+
+Check status in another terminal:
+
+```powershell
+openclaw gateway status
+```
+
+Important: if OpenClaw is configured with its own Telegram channel using the same bot token, do not run both Telegram pollers at the same time. For this setup, OpenClaw should be running as the required gateway, while `telegram_inventory_bot.py` handles Telegram.
+
+## 4. Start The Telegram Bot
+
+Open a second PowerShell terminal:
 
 ```powershell
 cd D:\Coding\GestInvMundoMaterno\Tienda_Materna
 python telegram_inventory_bot.py
 ```
 
-Leave that terminal open while you want the bot to respond.
+The bot starts only if OpenClaw passes all checks. If OpenClaw is stopped later, the bot replies with an OpenClaw error instead of answering inventory commands.
 
-If you want to start it hidden/background from PowerShell:
+Start it hidden/background from PowerShell:
 
 ```powershell
 cd D:\Coding\GestInvMundoMaterno\Tienda_Materna
 Start-Process -FilePath python -ArgumentList "telegram_inventory_bot.py" -WorkingDirectory "D:\Coding\GestInvMundoMaterno\Tienda_Materna" -WindowStyle Hidden
 ```
 
-## 3. Use It In Telegram
+## 5. Use It In Telegram
 
-Open Telegram and message your bot. Example:
+Open Telegram and message your bot:
 
 ```text
 /start
@@ -66,7 +110,7 @@ producto mas vendido
 alertas de reposicion
 ```
 
-## 4. Read The Logs
+## 6. Read The Logs
 
 The log file is:
 
@@ -83,13 +127,15 @@ Get-Content D:\Coding\GestInvMundoMaterno\Tienda_Materna\logs\telegram_bot.log -
 The log records:
 
 - bot startup
+- OpenClaw readiness status
 - incoming Telegram messages
 - chat/user/message IDs
 - outgoing replies
 - blocked write commands
+- OpenClaw dependency failures
 - errors and tracebacks
 
-## 5. Stop The Bot
+## 7. Stop The Bot
 
 Find the running bot:
 
@@ -103,7 +149,13 @@ Stop it by PID:
 Stop-Process -Id YOUR_PID_HERE
 ```
 
-## 6. Full Command List
+Stop OpenClaw by pressing `Ctrl+C` in the terminal running:
+
+```powershell
+openclaw gateway run
+```
+
+## 8. Full Command List
 
 General:
 
@@ -160,7 +212,7 @@ iniciar dia
 abrir dia
 empezar dia
 cerrar dia
-cerrar día
+cerrar dia
 ```
 
 Stock and sales writes:
@@ -182,7 +234,7 @@ leggins embarazo
 pijama maternidad
 ```
 
-## 7. Enable Write Commands
+## 9. Enable Write Commands
 
 Only do this if you trust who can message the bot.
 
@@ -203,16 +255,16 @@ iniciar dia
 cerrar dia
 ```
 
-## 8. Initialize Or Repair The Database
+## 10. Initialize Or Repair The Database
 
-SQLite is the default.
+SQLite is the default:
 
 ```powershell
 cd D:\Coding\GestInvMundoMaterno\Tienda_Materna
 python database.py
 ```
 
-## 9. PostgreSQL Mode
+## 11. PostgreSQL Mode
 
 SQLite remains the default. To use PostgreSQL, install the optional driver:
 
@@ -239,30 +291,20 @@ Migrate existing SQLite data:
 python scripts/migrate_sqlite_to_postgres.py --truncate
 ```
 
-## 10. Optional OpenClaw Notes
+## 12. Manual OpenClaw Bridge Test
 
-OpenClaw is not required for the current working Telegram bot. The direct bot is simpler and uses:
-
-```text
-telegram_inventory_bot.py
-```
-
-If you later want to use OpenClaw again, the inventory bridge is:
+You can test the inventory bridge directly:
 
 ```powershell
+cd D:\Coding\GestInvMundoMaterno\Tienda_Materna
 python openclaw_inventory_tool.py -- "ventas de hoy"
 ```
 
-The OpenClaw skill files are in:
-
-```text
-openclaw/mundo-materno-inventory/SKILL.md
-skills/mundo-materno-inventory/SKILL.md
-```
+This also fails if OpenClaw is not ready.
 
 ## Safety Notes
 
-- Rotate any Telegram bot token that was pasted into chat or committed accidentally.
+- Rotate any Telegram bot token or API key that was pasted into chat or exposed in logs.
 - Keep `.env` private.
 - Keep `MUNDO_MATERNO_ALLOW_MUTATIONS=0` for public bots.
 - Back up `inventario.db` before migrating to PostgreSQL.
