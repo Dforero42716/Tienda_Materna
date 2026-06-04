@@ -5,6 +5,14 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from database import get_connection
 from datetime import date, datetime, timedelta
 
+ROTACION_NIVELES = (
+    ("Alta", 6, 30),
+    ("Media alta", 4, 20),
+    ("Media", 2, 10),
+    ("Media baja", 1, 4),
+    ("Baja", 0, 1),
+)
+
 def stock_total():
     conn = get_connection()
     c = conn.cursor()
@@ -54,8 +62,16 @@ def total_productos():
     conn.close()
     return resultado or 0
 
-def stock_bajo(limite=5):
+def stock_bajo(limite=2):
     return productos_bajo_stock(limite)
+
+def categorias_disponibles():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT categoria FROM Productos ORDER BY categoria ASC")
+    resultados = [row[0] for row in c.fetchall()]
+    conn.close()
+    return resultados
 
 def productos_agotados():
     conn = get_connection()
@@ -115,7 +131,7 @@ def productos_por_categoria_detalle(categoria: str):
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
-        SELECT nombre, talla, color, stock, precio_detal
+        SELECT nombre, talla, color, stock, precio_detal, precio_mayorista
         FROM Productos
         WHERE LOWER(categoria) = ?
         ORDER BY nombre ASC
@@ -123,6 +139,14 @@ def productos_por_categoria_detalle(categoria: str):
     resultados = c.fetchall()
     conn.close()
     return resultados
+
+def categoria_existe(categoria: str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT categoria FROM Productos WHERE LOWER(categoria) = ? LIMIT 1", (categoria.lower(),))
+    resultado = c.fetchone()
+    conn.close()
+    return resultado[0] if resultado else None
 
 def top_mas_stock(limite=10):
     conn = get_connection()
@@ -164,6 +188,19 @@ def buscar_por_talla(talla: str):
     conn.close()
     return resultados
 
+def buscar_por_talla_categoria(talla: str, categoria: str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT nombre, color, stock, precio_detal, precio_mayorista
+        FROM Productos
+        WHERE LOWER(talla) = ? AND LOWER(categoria) = ?
+        ORDER BY nombre ASC
+    """, (talla.lower(), categoria.lower()))
+    resultados = c.fetchall()
+    conn.close()
+    return resultados
+
 def buscar_por_color(color: str):
     conn = get_connection()
     c = conn.cursor()
@@ -173,6 +210,19 @@ def buscar_por_color(color: str):
         WHERE LOWER(color) LIKE ?
         ORDER BY categoria ASC
     """, (f"%{color.lower()}%",))
+    resultados = c.fetchall()
+    conn.close()
+    return resultados
+
+def buscar_por_color_categoria(color: str, categoria: str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT nombre, talla, stock, precio_detal, precio_mayorista
+        FROM Productos
+        WHERE LOWER(color) LIKE ? AND LOWER(categoria) = ?
+        ORDER BY nombre ASC
+    """, (f"%{color.lower()}%", categoria.lower()))
     resultados = c.fetchall()
     conn.close()
     return resultados
@@ -217,6 +267,20 @@ def ventas_del_dia(fecha: str):
     conn.close()
     return resultados
 
+def venta_producto_por_fecha(fecha: str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT p.nombre, v.cantidad, p.stock, v.ganancia
+        FROM Ventas v
+        JOIN Productos p ON v.id_producto = p.id_producto
+        WHERE v.fecha_venta = ?
+        ORDER BY v.id_venta ASC
+    """, (fecha,))
+    resultados = c.fetchall()
+    conn.close()
+    return resultados
+
 def ganancias_totales():
     conn = get_connection()
     c = conn.cursor()
@@ -243,6 +307,45 @@ def producto_mas_vendido():
     resultado = c.fetchone()
     conn.close()
     return resultado or ("Sin ventas", 0)
+
+def productos_vendidos_extremos(desc=True):
+    orden = "DESC" if desc else "ASC"
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(f"""
+        WITH totales AS (
+            SELECT p.id_producto, p.nombre, p.categoria, COALESCE(SUM(v.cantidad), 0) AS total
+            FROM Productos p
+            LEFT JOIN Ventas v ON v.id_producto = p.id_producto
+            GROUP BY p.id_producto, p.nombre, p.categoria
+        )
+        SELECT nombre, categoria, total
+        FROM totales
+        WHERE total = (SELECT {'MAX' if desc else 'MIN'}(total) FROM totales)
+        ORDER BY nombre ASC
+    """)
+    globales = c.fetchall()
+
+    c.execute(f"""
+        WITH totales AS (
+            SELECT p.id_producto, p.nombre, p.categoria, COALESCE(SUM(v.cantidad), 0) AS total
+            FROM Productos p
+            LEFT JOIN Ventas v ON v.id_producto = p.id_producto
+            GROUP BY p.id_producto, p.nombre, p.categoria
+        ),
+        extremos AS (
+            SELECT categoria, {'MAX' if desc else 'MIN'}(total) AS extremo
+            FROM totales
+            GROUP BY categoria
+        )
+        SELECT t.categoria, t.nombre, t.total
+        FROM totales t
+        JOIN extremos e ON e.categoria = t.categoria AND e.extremo = t.total
+        ORDER BY t.categoria ASC, t.nombre ASC
+    """)
+    por_categoria = c.fetchall()
+    conn.close()
+    return globales, por_categoria
 
 def historial_semana():
     conn = get_connection()
@@ -296,6 +399,67 @@ def alertas_reposicion():
 
     conn.close()
     return demanda_alta_hoy, demanda_alta_semana, sin_ventas
+
+def recomendaciones_rotacion():
+    conn = get_connection()
+    c = conn.cursor()
+    hoy = date.today()
+    desde_semana = (hoy - timedelta(days=6)).isoformat()
+    desde_estancado = (hoy - timedelta(days=3)).isoformat()
+
+    c.execute("""
+        SELECT p.nombre, p.stock, COALESCE(SUM(v.cantidad), 0) AS semana
+        FROM Productos p
+        LEFT JOIN Ventas v ON v.id_producto = p.id_producto AND v.fecha_venta >= ?
+        GROUP BY p.id_producto, p.nombre, p.stock
+        ORDER BY semana DESC, p.nombre ASC
+    """, (desde_semana,))
+    filas_semana = c.fetchall()
+
+    c.execute("""
+        SELECT p.nombre, p.precio_detal, p.precio_mayorista
+        FROM Productos p
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM Ventas v
+            WHERE v.id_producto = p.id_producto AND v.fecha_venta >= ?
+        )
+        ORDER BY p.nombre ASC
+    """, (desde_estancado,))
+    estancados = c.fetchall()
+    conn.close()
+
+    reabastecer = []
+    for nombre, stock, semana in filas_semana:
+        por_dia = semana / 7
+        nivel = "Baja"
+        for nombre_nivel, diario_min, semanal_min in ROTACION_NIVELES:
+            if por_dia >= diario_min or semana >= semanal_min:
+                nivel = nombre_nivel
+                break
+        if nivel in {"Alta", "Media alta"}:
+            reabastecer.append({
+                "nombre": nombre,
+                "stock_actual": stock,
+                "vendidas": semana,
+                "nivel": nivel,
+                "pedir": semana,
+            })
+
+    bajar_precio = []
+    for nombre, precio_detal, precio_mayorista in estancados:
+        sugerido = max(precio_mayorista + 2000, precio_mayorista * 1.10)
+        sugerido = min(precio_detal, sugerido)
+        ganancia = sugerido - precio_mayorista
+        bajar_precio.append({
+            "nombre": nombre,
+            "precio_actual": precio_detal,
+            "costo": precio_mayorista,
+            "sugerido": sugerido,
+            "ganancia": ganancia,
+        })
+
+    return reabastecer, bajar_precio
 
 def iniciar_dia():
     conn = get_connection()

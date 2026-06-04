@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 
 from env_loader import env_flag_enabled, load_env
-from main import MENSAJE_COMANDOS, preguntar
+from main import AsistenteInventario, MENSAJE_COMANDOS, mensaje_inicio
 from modules.analisis import productos_por_categoria, productos_por_categoria_detalle
 from openclaw_guard import require_openclaw_ready
 
@@ -21,8 +21,9 @@ load_env()
 API_BASE = "https://api.telegram.org/bot{token}/{method}"
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 LOG_FILE = LOG_DIR / "telegram_bot.log"
-MUTATION_GATE_BYPASSED = True
+MUTATION_GATE_BYPASSED = False
 CATEGORY_CALLBACK_PREFIX = "category:"
+ASSISTENTES_POR_CHAT = {}
 MUTATING_PREFIXES = (
     "vender ",
     "registrar venta ",
@@ -160,8 +161,14 @@ def format_category_products(category):
     products = productos_por_categoria_detalle(category)
     if not products:
         return f"No hay productos en la categoria '{category}'."
-    lines = [f"- {name} (Talla {size}, {color}): {stock} uds - ${price:,.0f}" for name, size, color, stock, price in products]
-    return f"Productos en '{category}':\n" + "\n".join(lines)
+    lines = [
+        (
+            f"   {name} (Talla {size}, {color}): {stock} uds\n"
+            f"   Precio detal: ${retail_price:,.0f} - Precio por mayor: ${wholesale_price:,.0f}"
+        )
+        for name, size, color, stock, retail_price, wholesale_price in products
+    ]
+    return f"{category}:\n" + "\n".join(lines)
 
 
 def handle_callback_query(token, callback_query):
@@ -216,7 +223,7 @@ def handle_message(token, message):
         send_message(
             token,
             chat_id,
-            "Hola, soy Mundo Materno. Preguntame por inventario, ventas, stock, categorias, tallas o colores.",
+            mensaje_inicio(),
         )
         return
 
@@ -238,7 +245,8 @@ def handle_message(token, message):
         )
         return
 
-    response = preguntar(text)
+    asistente = ASISTENTES_POR_CHAT.setdefault(chat_id, AsistenteInventario())
+    response = asistente.responder(text)
     logger.info("Inventory response chat_id=%s chars=%s", chat_id, len(response))
     send_message(token, chat_id, response, reply_markup=build_category_keyboard() if is_category_list_command(text) else None)
 
