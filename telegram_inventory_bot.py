@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 
 from env_loader import env_flag_enabled, load_env
-from openclaw_guard import require_openclaw_ready
+from openclaw_guard import openclaw_executable, require_openclaw_ready
 
 import os
 
@@ -132,7 +132,7 @@ def run_openclaw_agent(text, chat_id):
     require_openclaw_ready()
 
     args = [
-        "openclaw",
+        openclaw_executable(),
         "agent",
         "--session-key",
         f"mundo-materno-telegram-{chat_id}",

@@ -24,6 +24,10 @@ def _openclaw_executable():
     return "openclaw"
 
 
+def openclaw_executable():
+    return _openclaw_executable()
+
+
 def _run_openclaw(args, timeout=10):
     return subprocess.run(
         [_openclaw_executable(), *args],
