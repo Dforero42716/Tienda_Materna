@@ -7,6 +7,7 @@ import ssl
 import time
 import urllib.parse
 import urllib.request
+import urllib.error
 import uuid
 
 from env_loader import env_flag_enabled, load_env
@@ -33,6 +34,10 @@ CONTEXT_OVERFLOW_MARKERS = (
 )
 RESET_COMMANDS = {"/reset", "/new", "reset", "nuevo chat", "nueva conversacion"}
 FRESH_START_COMMANDS = {"/start", "/help", "hola", "menu", "ayuda", "comandos"}
+
+
+class TelegramConflictError(RuntimeError):
+    pass
 
 
 def setup_logging():
@@ -79,7 +84,7 @@ def describe_message(message):
     }
 
 
-def telegram_request(token, method, payload=None):
+def telegram_request(token, method, payload=None, timeout=60):
     data = None
     headers = {}
     if payload is not None:
@@ -97,11 +102,37 @@ def telegram_request(token, method, payload=None):
         logger.warning("Telegram TLS certificate verification is disabled by TELEGRAM_INSECURE_SKIP_TLS_VERIFY.")
         context = ssl._create_unverified_context()
 
-    with urllib.request.urlopen(request, timeout=60, context=context) as response:
-        result = json.loads(response.read().decode("utf-8"))
-        if not result.get("ok", True):
-            logger.warning("Telegram API returned non-ok response method=%s response=%s", method, result)
-        return result
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            if not result.get("ok", True):
+                logger.warning("Telegram API returned non-ok response method=%s response=%s", method, result)
+            return result
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        if exc.code == 409:
+            raise TelegramConflictError(_telegram_conflict_message(detail)) from exc
+        raise
+
+
+def _telegram_conflict_message(detail):
+    return (
+        "Telegram rechazo getUpdates con HTTP 409 Conflict. "
+        "Ese bot token ya esta siendo usado por otro proceso o por un webhook. "
+        "Cierra cualquier otra ventana que este ejecutando telegram_inventory_bot.py, "
+        "deten el canal de Telegram de OpenClaw si usa el mismo token, y vuelve a iniciar este bot. "
+        f"Detalle de Telegram: {detail}"
+    )
+
+
+def clear_telegram_webhook(token):
+    response = telegram_request(
+        token,
+        "deleteWebhook?drop_pending_updates=true",
+        timeout=20,
+    )
+    logger.info("Telegram webhook cleared response=%s", response)
+    return response
 
 
 def send_message(token, chat_id, text, reply_markup=None):
@@ -309,6 +340,7 @@ def main():
 
     me = telegram_request(token, "getMe")
     username = me.get("result", {}).get("username", "desconocido")
+    clear_telegram_webhook(token)
     logger.info("Bot de Telegram iniciado username=@%s log_file=%s", username, LOG_FILE)
     print(f"Bot de Telegram iniciado: @{username}")
     print(f"Log: {LOG_FILE}")
@@ -351,6 +383,9 @@ def main():
     except KeyboardInterrupt:
         logger.info("Bot detenido por el usuario.")
         raise
+    except TelegramConflictError as exc:
+        logger.error("%s", exc)
+        print(str(exc))
     except Exception:
         logger.exception("Bot stopped unexpectedly.")
         raise

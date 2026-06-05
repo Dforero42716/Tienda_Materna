@@ -1,4 +1,6 @@
+import io
 import types
+import urllib.error
 import unittest
 from unittest.mock import patch
 
@@ -76,6 +78,33 @@ class TelegramInventoryBotTests(unittest.TestCase):
 
         self.assertEqual(sent, [(123, "MENU OK")])
         agent.assert_called_once_with("hola", 123)
+
+    def test_telegram_request_translates_409_conflict(self):
+        error = urllib.error.HTTPError(
+            url="https://api.telegram.org/botTOKEN/getUpdates",
+            code=409,
+            msg="Conflict",
+            hdrs={},
+            fp=io.BytesIO(b'{"description":"terminated by other getUpdates request"}'),
+        )
+
+        with patch.object(bot.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(bot.TelegramConflictError) as context:
+                bot.telegram_request("TOKEN", "getUpdates?timeout=30")
+
+        self.assertIn("HTTP 409 Conflict", str(context.exception))
+        self.assertIn("otro proceso", str(context.exception))
+
+    def test_clear_telegram_webhook_drops_pending_updates(self):
+        with patch.object(bot, "telegram_request", return_value={"ok": True}) as request:
+            response = bot.clear_telegram_webhook("TOKEN")
+
+        self.assertEqual(response, {"ok": True})
+        request.assert_called_once_with(
+            "TOKEN",
+            "deleteWebhook?drop_pending_updates=true",
+            timeout=20,
+        )
 
 
 if __name__ == "__main__":
