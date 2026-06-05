@@ -61,7 +61,7 @@ class TelegramInventoryBotTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         fallback.assert_called_once_with("hola", 123, "openclaw-agent-context-overflow-response")
 
-    def test_reset_command_rotates_and_replies_with_fresh_hola(self):
+    def test_reset_command_rotates_and_replies_with_menu(self):
         sent = []
 
         message = {
@@ -72,12 +72,35 @@ class TelegramInventoryBotTests(unittest.TestCase):
         }
 
         with patch.object(bot, "require_openclaw_ready", return_value="ok"), \
-             patch.object(bot, "run_openclaw_agent", return_value="MENU OK") as agent, \
+             patch.object(bot, "run_openclaw_agent") as agent, \
              patch.object(bot, "send_message", side_effect=lambda _token, chat_id, text, reply_markup=None: sent.append((chat_id, text))):
             bot.handle_message("token", message)
 
-        self.assertEqual(sent, [(123, "MENU OK")])
-        agent.assert_called_once_with("hola", 123)
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0][0], 123)
+        self.assertIn("Hola Yaneth", sent[0][1])
+        self.assertIn("Comandos disponibles", sent[0][1])
+        agent.assert_not_called()
+
+    def test_hola_replies_with_menu_without_agent(self):
+        sent = []
+        message = {
+            "message_id": 1,
+            "chat": {"id": 123, "type": "private"},
+            "from": {"id": 456, "first_name": "Marycruz"},
+            "text": "Hola",
+        }
+
+        with patch.object(bot, "require_openclaw_ready", return_value="ok"), \
+             patch.object(bot, "run_openclaw_agent") as agent, \
+             patch.object(bot, "send_message", side_effect=lambda _token, chat_id, text, reply_markup=None: sent.append((chat_id, text))):
+            bot.handle_message("token", message)
+
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0][0], 123)
+        self.assertIn("Hola Marycruz", sent[0][1])
+        self.assertIn("Comandos disponibles", sent[0][1])
+        agent.assert_not_called()
 
     def test_telegram_request_translates_409_conflict(self):
         error = urllib.error.HTTPError(

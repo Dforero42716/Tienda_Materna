@@ -11,7 +11,7 @@ import urllib.error
 import uuid
 
 from env_loader import env_flag_enabled, load_env
-from main import AsistenteInventario
+from main import AsistenteInventario, COMANDOS_DISPONIBLES
 from openclaw_guard import openclaw_executable, require_openclaw_ready
 
 import os
@@ -158,6 +158,12 @@ def reset_openclaw_session(chat_id):
 
 def _is_context_overflow(text):
     return any(marker.lower() in text.lower() for marker in CONTEXT_OVERFLOW_MARKERS)
+
+
+def build_menu_response(message):
+    first_name = message.get("from", {}).get("first_name", "").strip()
+    name = f" {first_name}" if first_name else ""
+    return f"👋 Hola{name}, soy tu asistente personal. Dime que quieres hacer:\n\n{COMANDOS_DISPONIBLES}"
 
 
 def run_local_inventory_fallback(text, chat_id, reason):
@@ -313,17 +319,16 @@ def handle_message(token, message):
     if normalized in RESET_COMMANDS:
         reset_openclaw_session(chat_id)
         reset_done = True
-        text = "hola"
-        normalized = text
+        normalized = "hola"
 
     if normalized in FRESH_START_COMMANDS and not reset_done:
         reset_openclaw_session(chat_id)
 
-    if normalized == "/start":
-        text = "hola"
-
-    if normalized == "/help":
-        text = "ayuda"
+    if reset_done or normalized in FRESH_START_COMMANDS:
+        response = build_menu_response(message)
+        logger.info("Menu response chat_id=%s chars=%s", chat_id, len(response))
+        send_message(token, chat_id, response)
+        return
 
     response = run_openclaw_agent(text, chat_id)
     logger.info("Inventory response chat_id=%s chars=%s", chat_id, len(response))
