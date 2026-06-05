@@ -10,6 +10,7 @@ import urllib.request
 import uuid
 
 from env_loader import env_flag_enabled, load_env
+from main import AsistenteInventario
 from openclaw_guard import openclaw_executable, require_openclaw_ready
 
 import os
@@ -24,6 +25,7 @@ CATEGORY_CALLBACK_PREFIX = "category:"
 OPENCLAW_AGENT_ID = os.environ.get("MUNDO_MATERNO_OPENCLAW_AGENT")
 OPENCLAW_AGENT_TIMEOUT = int(os.environ.get("MUNDO_MATERNO_OPENCLAW_AGENT_TIMEOUT", "600"))
 SESSION_TOKEN_BY_CHAT = {}
+LOCAL_FALLBACK_BY_CHAT = {}
 CONTEXT_OVERFLOW_MARKERS = (
     "Context overflow",
     "prompt too large",
@@ -127,6 +129,13 @@ def _is_context_overflow(text):
     return any(marker.lower() in text.lower() for marker in CONTEXT_OVERFLOW_MARKERS)
 
 
+def run_local_inventory_fallback(text, chat_id, reason):
+    require_openclaw_ready()
+    logger.warning("Using local inventory fallback chat_id=%s reason=%s", chat_id, reason)
+    assistant = LOCAL_FALLBACK_BY_CHAT.setdefault(chat_id, AsistenteInventario())
+    return assistant.responder(text)
+
+
 def _extract_agent_text(payload):
     result = payload.get("result") if isinstance(payload, dict) else None
     payloads = result.get("payloads") if isinstance(result, dict) else None
@@ -184,7 +193,7 @@ def run_openclaw_agent(text, chat_id, retry_on_context_overflow=True):
             if retry_on_context_overflow:
                 logger.warning("Retrying OpenClaw agent after context overflow chat_id=%s", chat_id)
                 return run_openclaw_agent(text, chat_id, retry_on_context_overflow=False)
-            return "La conversacion anterior estaba demasiado llena. La reinicie; escribe hola para empezar de nuevo."
+            return run_local_inventory_fallback(text, chat_id, "openclaw-agent-context-overflow")
         raise RuntimeError(f"OpenClaw agent failed: {detail}")
 
     stdout = (result.stdout or "").strip()
@@ -203,7 +212,7 @@ def run_openclaw_agent(text, chat_id, retry_on_context_overflow=True):
             if retry_on_context_overflow:
                 logger.warning("Retrying OpenClaw agent after context overflow response chat_id=%s", chat_id)
                 return run_openclaw_agent(text, chat_id, retry_on_context_overflow=False)
-            return "La conversacion anterior estaba demasiado llena. La reinicie; escribe hola para empezar de nuevo."
+            return run_local_inventory_fallback(text, chat_id, "openclaw-agent-context-overflow-response")
         return response
 
     if isinstance(payload, dict) and payload.get("status") == "in_flight":
@@ -269,12 +278,14 @@ def handle_message(token, message):
         return
 
     normalized = text.lower().strip()
+    reset_done = False
     if normalized in RESET_COMMANDS:
         reset_openclaw_session(chat_id)
+        reset_done = True
         text = "hola"
         normalized = text
 
-    if normalized in FRESH_START_COMMANDS:
+    if normalized in FRESH_START_COMMANDS and not reset_done:
         reset_openclaw_session(chat_id)
 
     if normalized == "/start":
