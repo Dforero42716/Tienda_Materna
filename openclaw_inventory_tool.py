@@ -5,11 +5,12 @@ import sys
 
 from env_loader import env_flag_enabled, load_env
 from main import preguntar
+from openclaw_guard import require_openclaw_ready
 
 load_env()
 
 
-MUTATION_GATE_BYPASSED = True
+MUTATION_GATE_BYPASSED = False
 MUTATING_PREFIXES = (
     "vender ",
     "registrar venta ",
@@ -46,6 +47,8 @@ def main():
     else:
         payload = json.load(sys.stdin)
         command = str(payload.get("command", "")).strip()
+
+    require_openclaw_ready()
 
     allow_mutations = args.allow_mutations or MUTATION_GATE_BYPASSED or env_flag_enabled("MUNDO_MATERNO_ALLOW_MUTATIONS")
     if is_mutating(command) and not allow_mutations:

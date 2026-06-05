@@ -729,7 +729,9 @@ def preguntar(mensaje):
 
 
 if __name__ == "__main__":
+    openclaw_status = require_openclaw_ready()
     print(MENU)
+    print(f"OpenClaw listo: {openclaw_status}")
     print(f"Hoy es {date.today().isoformat()}")
 
     while True:

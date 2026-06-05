@@ -59,7 +59,16 @@ scripts/migrate_sqlite_to_postgres.py
                                Optional migration helper
 ```
 
-OpenClaw is mandatory for normal operation. If the CLI, configuration, required `mundo-materno-inventory` skill, or gateway is missing, the assistant refuses to answer inventory commands instead of silently bypassing the dependency.
+OpenClaw is the brain and required runtime gate for the assistant. The project is intentionally built so that if OpenClaw is not working, Mundo Materno does not work.
+
+Every runtime path checks OpenClaw before serving inventory behavior:
+
+- `telegram_inventory_bot.py` checks OpenClaw at startup and before handling messages or callback buttons.
+- `main.py` checks OpenClaw before direct assistant responses and before starting console mode.
+- `openclaw_inventory_tool.py` checks OpenClaw before returning bridge output.
+- `openclaw_guard.py` verifies the OpenClaw CLI, validates configuration, confirms the `mundo-materno-inventory` skill is eligible, and checks that the gateway is listening.
+
+If the CLI, configuration, required skill, or gateway is missing, the assistant refuses to answer inventory commands instead of silently bypassing the dependency.
 
 ## Data Model
 
@@ -136,7 +145,7 @@ The skills list must include:
 mundo-materno-inventory
 ```
 
-Start the OpenClaw gateway:
+Start the OpenClaw gateway before starting any assistant entrypoint:
 
 ```powershell
 openclaw gateway run
@@ -147,6 +156,8 @@ In another terminal, start the Telegram bot:
 ```powershell
 python telegram_inventory_bot.py
 ```
+
+If OpenClaw is stopped later, the Telegram bot replies with an OpenClaw dependency error instead of answering inventory commands.
 
 For a fresh-machine setup walkthrough, see `README_CLONE_SETUP.md`. For the full OpenClaw/Telegram operational guide, see `README_OPENCLAW_TELEGRAM.md`.
 
