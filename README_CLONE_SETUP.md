@@ -95,11 +95,31 @@ DATABASE_URL=postgresql://user:password@localhost:5432/mundo_materno
 
 OpenClaw is mandatory for this project. The app will not answer if OpenClaw is missing or stopped. Telegram messages are delegated to `openclaw agent`, and the `mundo-materno-inventory` skill calls the local Python bridge for inventory execution.
 
-Check OpenClaw:
+First point OpenClaw's workspace to this cloned repo. Run this from inside the `Tienda_Materna` folder:
+
+```powershell
+$repo = (Get-Location).Path.Replace('\', '/')
+openclaw config set agents.defaults.workspace $repo
+```
+
+Confirm the value was saved:
+
+```powershell
+openclaw config get agents.defaults.workspace
+```
+
+The output must be the cloned repo folder, for example:
+
+```text
+C:/Users/YourUser/Tienda_Materna
+```
+
+Now check OpenClaw:
 
 ```powershell
 openclaw --version
 openclaw config validate
+openclaw skills check
 openclaw skills list --eligible
 ```
 
@@ -116,7 +136,28 @@ openclaw/mundo-materno-inventory/SKILL.md
 skills/mundo-materno-inventory/SKILL.md
 ```
 
-If OpenClaw does not see the skill, update the local OpenClaw config so its workspace points to this cloned repo.
+If `mundo-materno-inventory` still does not appear, the workspace is usually pointing at the wrong folder. Run this again from the repo root:
+
+```powershell
+cd C:\path\to\Tienda_Materna
+$repo = (Get-Location).Path.Replace('\', '/')
+openclaw config set agents.defaults.workspace $repo
+openclaw config validate
+openclaw skills check
+openclaw skills list --eligible
+```
+
+If the OpenClaw gateway was already running, restart it after changing the workspace:
+
+```powershell
+openclaw gateway restart
+```
+
+If `gateway restart` says there is no installed service, stop the foreground gateway terminal with `Ctrl+C` and start it again:
+
+```powershell
+openclaw gateway run
+```
 
 ## 6. Initialize The Database
 
