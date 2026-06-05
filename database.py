@@ -1,13 +1,33 @@
 import os
 import sqlite3
+from pathlib import Path
 
 from env_loader import load_env
 
 load_env()
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "inventario.db")
-DB_ENGINE = os.environ.get("MUNDO_MATERNO_DB_ENGINE", "sqlite").lower()
-DATABASE_URL = os.environ.get("DATABASE_URL")
+ROOT_DIR = Path(__file__).resolve().parent
+
+
+def _db_engine():
+    return os.environ.get("MUNDO_MATERNO_DB_ENGINE", "sqlite").strip().lower()
+
+
+def _database_url():
+    return os.environ.get("DATABASE_URL")
+
+
+def _sqlite_path():
+    configured = os.environ.get("MUNDO_MATERNO_SQLITE_PATH", "inventario.db").strip()
+    path = Path(configured)
+    if not path.is_absolute():
+        path = ROOT_DIR / path
+    return path.resolve()
+
+
+DB_PATH = str(_sqlite_path())
+DB_ENGINE = _db_engine()
+DATABASE_URL = _database_url()
 
 
 PRODUCTOS_INICIALES = [
@@ -142,25 +162,37 @@ class PostgresConnection:
 
 
 def using_postgres():
-    return DB_ENGINE in {"postgres", "postgresql"} or bool(DATABASE_URL)
+    engine = _db_engine()
+    if engine in {"postgres", "postgresql"}:
+        return True
+    if engine in {"sqlite", "sqlite3"}:
+        return False
+    return bool(_database_url())
 
 
-def get_connection():
+def get_connection(create_if_missing=False):
     if using_postgres():
         try:
             import psycopg
         except ImportError as exc:
             raise RuntimeError("Instala psycopg para usar PostgreSQL: pip install 'psycopg[binary]'") from exc
 
-        if not DATABASE_URL:
+        database_url = _database_url()
+        if not database_url:
             raise RuntimeError("Configura DATABASE_URL para usar PostgreSQL.")
-        return PostgresConnection(psycopg.connect(DATABASE_URL))
+        return PostgresConnection(psycopg.connect(database_url))
 
-    return sqlite3.connect(DB_PATH)
+    db_path = _sqlite_path()
+    if not create_if_missing and not db_path.exists():
+        raise RuntimeError(
+            f"No encontre la base de datos SQLite en {db_path}. "
+            "Copia inventario.db a la carpeta del proyecto o ejecuta: python database.py"
+        )
+    return sqlite3.connect(str(db_path))
 
 
 def crear_base_de_datos():
-    conn = get_connection()
+    conn = get_connection(create_if_missing=True)
     c = conn.cursor()
 
     if using_postgres():
