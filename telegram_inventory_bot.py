@@ -104,28 +104,29 @@ def send_message(token, chat_id, text, reply_markup=None):
     logger.info("Sent reply chat_id=%s chunks=%s chars=%s", chat_id, len(chunks), len(text))
 
 
-def _extract_agent_text(value):
-    if isinstance(value, str) and value.strip():
-        return value.strip()
+def _extract_agent_text(payload):
+    result = payload.get("result") if isinstance(payload, dict) else None
+    payloads = result.get("payloads") if isinstance(result, dict) else None
+    if not isinstance(payloads, list):
+        return ""
 
-    if isinstance(value, dict):
-        for key in ("response", "reply", "message", "text", "content", "output", "answer", "final"):
-            if key in value:
-                text = _extract_agent_text(value[key])
-                if text:
-                    return text
-        for nested in value.values():
-            text = _extract_agent_text(nested)
-            if text:
-                return text
+    lines = []
+    for item in payloads:
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text")
+        if isinstance(text, str) and text.strip():
+            lines.append(text.strip())
+        media_url = item.get("mediaUrl")
+        if isinstance(media_url, str) and media_url.strip():
+            lines.append(f"MEDIA:{media_url.strip()}")
+        media_urls = item.get("mediaUrls")
+        if isinstance(media_urls, list):
+            for url in media_urls:
+                if isinstance(url, str) and url.strip():
+                    lines.append(f"MEDIA:{url.strip()}")
 
-    if isinstance(value, list):
-        parts = [_extract_agent_text(item) for item in value]
-        parts = [part for part in parts if part]
-        if parts:
-            return "\n".join(parts)
-
-    return ""
+    return "\n".join(lines).strip()
 
 
 def run_openclaw_agent(text, chat_id):
@@ -167,7 +168,20 @@ def run_openclaw_agent(text, chat_id):
         return stdout
 
     response = _extract_agent_text(payload)
-    return response or stdout
+    if response:
+        return response
+
+    if isinstance(payload, dict) and payload.get("status") == "in_flight":
+        run_id = payload.get("runId")
+        if isinstance(run_id, str) and run_id.strip():
+            return f"OpenClaw ya tiene una respuesta en proceso para esta conversacion. Run ID: {run_id}"
+        return "OpenClaw ya tiene una respuesta en proceso para esta conversacion."
+
+    summary = payload.get("summary") if isinstance(payload, dict) else None
+    if isinstance(summary, str) and summary.strip():
+        return summary.strip()
+
+    return "OpenClaw termino el turno, pero no devolvio texto para enviar por Telegram."
 
 
 def handle_callback_query(token, callback_query):
