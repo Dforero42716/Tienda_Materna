@@ -93,7 +93,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/mundo_materno
 
 ## 5. Configure OpenClaw
 
-OpenClaw is mandatory for this project. The app will not answer if OpenClaw is missing or stopped.
+OpenClaw is mandatory for this project. The app will not answer if OpenClaw is missing or stopped. Telegram messages are delegated to `openclaw agent`, and the `mundo-materno-inventory` skill calls the local Python bridge for inventory execution.
 
 Check OpenClaw:
 
@@ -190,7 +190,7 @@ cd Tienda_Materna
 python telegram_inventory_bot.py
 ```
 
-The bot starts only if OpenClaw is ready.
+The bot starts only if OpenClaw is ready. Each Telegram message is then routed through OpenClaw before any inventory command is executed.
 
 ## 8. Test In Telegram
 

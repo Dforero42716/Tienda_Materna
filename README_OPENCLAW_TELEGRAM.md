@@ -1,8 +1,8 @@
 # Mundo Materno Telegram Bot With Required OpenClaw
 
-OpenClaw is mandatory for this project. If OpenClaw is not installed, its config is invalid, the `mundo-materno-inventory` skill is missing, or the gateway is not running, the inventory program refuses to answer.
+OpenClaw is mandatory for this project and is the brain of the operation. If OpenClaw is not installed, its config is invalid, the `mundo-materno-inventory` skill is missing, or the gateway is not running, the inventory program refuses to answer.
 
-The Telegram messages are still handled by `telegram_inventory_bot.py`, but every inventory request goes through the OpenClaw readiness gate before `main.preguntar()` runs.
+The Telegram messages are received by `telegram_inventory_bot.py`, but the bot delegates each user message to `openclaw agent`. OpenClaw uses the `mundo-materno-inventory` skill to decide what to do, and the skill calls `openclaw_inventory_tool.py` as the local Python bridge when it needs inventory data or mutations.
 
 ## 1. Configure `.env`
 
@@ -97,7 +97,7 @@ cd D:\Coding\GestInvMundoMaterno\Tienda_Materna
 python telegram_inventory_bot.py
 ```
 
-The bot starts only if OpenClaw passes all checks. If OpenClaw is stopped later, the bot replies with an OpenClaw error instead of answering inventory commands.
+The bot starts only if OpenClaw passes all checks. If OpenClaw is stopped later, the bot replies with an OpenClaw error instead of answering inventory commands. If the OpenClaw agent cannot complete the turn, the Telegram bot reports the OpenClaw agent error.
 
 Start it hidden/background from PowerShell:
 
@@ -327,7 +327,7 @@ cd D:\Coding\GestInvMundoMaterno\Tienda_Materna
 python openclaw_inventory_tool.py -- "ventas de hoy"
 ```
 
-This also fails if OpenClaw is not ready.
+This also fails if OpenClaw is not ready. In the Telegram flow, the bot calls `openclaw agent` first; this bridge is what the OpenClaw skill uses to execute the inventory operation.
 
 ## Safety Notes
 

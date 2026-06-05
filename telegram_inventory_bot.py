@@ -2,15 +2,13 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-import re
+import subprocess
 import ssl
 import time
 import urllib.parse
 import urllib.request
 
 from env_loader import env_flag_enabled, load_env
-from main import AsistenteInventario, MENSAJE_COMANDOS, mensaje_inicio
-from modules.analisis import productos_por_categoria, productos_por_categoria_detalle
 from openclaw_guard import require_openclaw_ready
 
 import os
@@ -21,23 +19,9 @@ load_env()
 API_BASE = "https://api.telegram.org/bot{token}/{method}"
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 LOG_FILE = LOG_DIR / "telegram_bot.log"
-MUTATION_GATE_BYPASSED = False
 CATEGORY_CALLBACK_PREFIX = "category:"
-ASISTENTES_POR_CHAT = {}
-MUTATING_PREFIXES = (
-    "vender ",
-    "registrar venta ",
-    "agregar stock ",
-    "agregar unidades ",
-    "iniciar dia",
-    "iniciar día",
-    "abrir dia",
-    "abrir día",
-    "empezar dia",
-    "empezar día",
-    "cerrar dia",
-    "cerrar día",
-)
+OPENCLAW_AGENT_ID = os.environ.get("MUNDO_MATERNO_OPENCLAW_AGENT")
+OPENCLAW_AGENT_TIMEOUT = int(os.environ.get("MUNDO_MATERNO_OPENCLAW_AGENT_TIMEOUT", "600"))
 
 
 def setup_logging():
@@ -84,18 +68,6 @@ def describe_message(message):
     }
 
 
-def is_mutating_command(text):
-    normalized = text.lower().strip()
-    if any(normalized.startswith(prefix) for prefix in MUTATING_PREFIXES):
-        return True
-    return bool(
-        re.search(
-            r"\b(?:quiero\s+)?(?:(?:registrar|hacer|anotar|crear)\s+(?:una\s+)?venta|vender)\b\s+(?:de\s+)?\d+\b",
-            normalized,
-        )
-    )
-
-
 def telegram_request(token, method, payload=None):
     data = None
     headers = {}
@@ -132,43 +104,70 @@ def send_message(token, chat_id, text, reply_markup=None):
     logger.info("Sent reply chat_id=%s chunks=%s chars=%s", chat_id, len(chunks), len(text))
 
 
-def is_category_list_command(text):
-    normalized = text.lower().strip()
-    return (
-        normalized == "categorias"
-        or "lista de categorias" in normalized
-        or "ver categorias" in normalized
+def _extract_agent_text(value):
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+
+    if isinstance(value, dict):
+        for key in ("response", "reply", "message", "text", "content", "output", "answer", "final"):
+            if key in value:
+                text = _extract_agent_text(value[key])
+                if text:
+                    return text
+        for nested in value.values():
+            text = _extract_agent_text(nested)
+            if text:
+                return text
+
+    if isinstance(value, list):
+        parts = [_extract_agent_text(item) for item in value]
+        parts = [part for part in parts if part]
+        if parts:
+            return "\n".join(parts)
+
+    return ""
+
+
+def run_openclaw_agent(text, chat_id):
+    require_openclaw_ready()
+
+    args = [
+        "openclaw",
+        "agent",
+        "--session-key",
+        f"mundo-materno-telegram-{chat_id}",
+        "--message",
+        text,
+        "--json",
+    ]
+    if OPENCLAW_AGENT_ID:
+        args[2:2] = ["--agent", OPENCLAW_AGENT_ID]
+
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        text=True,
+        timeout=OPENCLAW_AGENT_TIMEOUT,
+        check=False,
     )
 
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"OpenClaw agent failed: {detail}")
 
-def build_category_keyboard():
-    buttons = []
-    for category, count in productos_por_categoria():
-        if not category:
-            continue
-        callback_data = f"{CATEGORY_CALLBACK_PREFIX}{category}"
-        if len(callback_data.encode("utf-8")) > 64:
-            logger.warning("Category skipped in inline keyboard because callback data is too long: %r", category)
-            continue
-        buttons.append([{"text": f"{category} ({count})", "callback_data": callback_data}])
+    stdout = (result.stdout or "").strip()
+    if not stdout:
+        return "OpenClaw no devolvio una respuesta."
 
-    if not buttons:
-        return None
-    return {"inline_keyboard": buttons}
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return stdout
 
-
-def format_category_products(category):
-    products = productos_por_categoria_detalle(category)
-    if not products:
-        return f"No hay productos en la categoria '{category}'."
-    lines = [
-        (
-            f"   {name} (Talla {size}, {color}): {stock} uds\n"
-            f"   Precio detal: ${retail_price:,.0f} - Precio por mayor: ${wholesale_price:,.0f}"
-        )
-        for name, size, color, stock, retail_price, wholesale_price in products
-    ]
-    return f"{category}:\n" + "\n".join(lines)
+    response = _extract_agent_text(payload)
+    return response or stdout
 
 
 def handle_callback_query(token, callback_query):
@@ -195,7 +194,8 @@ def handle_callback_query(token, callback_query):
     if data.startswith(CATEGORY_CALLBACK_PREFIX):
         category = data[len(CATEGORY_CALLBACK_PREFIX):].strip()
         logger.info("Category callback chat_id=%s category=%r", chat_id, category)
-        send_message(token, chat_id, format_category_products(category))
+        response = run_openclaw_agent(f"productos de la categoria {category}", chat_id)
+        send_message(token, chat_id, response)
         return
 
     logger.warning("Unknown callback chat_id=%s data=%r", chat_id, data)
@@ -220,35 +220,14 @@ def handle_message(token, message):
         return
 
     if text.startswith("/start"):
-        send_message(
-            token,
-            chat_id,
-            mensaje_inicio(),
-        )
-        return
+        text = "hola"
 
     if text.startswith("/help"):
-        send_message(
-            token,
-            chat_id,
-            MENSAJE_COMANDOS,
-        )
-        return
+        text = "ayuda"
 
-    mutations_allowed = MUTATION_GATE_BYPASSED or env_flag_enabled("MUNDO_MATERNO_ALLOW_MUTATIONS")
-    if is_mutating_command(text) and not mutations_allowed:
-        logger.warning("Blocked mutating command context=%s text=%r", context, text)
-        send_message(
-            token,
-            chat_id,
-            "Comando bloqueado: esta accion modifica inventario, ventas o el dia operativo.",
-        )
-        return
-
-    asistente = ASISTENTES_POR_CHAT.setdefault(chat_id, AsistenteInventario())
-    response = asistente.responder(text)
+    response = run_openclaw_agent(text, chat_id)
     logger.info("Inventory response chat_id=%s chars=%s", chat_id, len(response))
-    send_message(token, chat_id, response, reply_markup=build_category_keyboard() if is_category_list_command(text) else None)
+    send_message(token, chat_id, response)
 
 
 def main():

@@ -1,6 +1,6 @@
 # Mundo Materno Inventory Assistant
 
-Mundo Materno Inventory Assistant is a Telegram-based inventory and sales helper for a maternity clothing store. It lets the store owner ask natural Spanish commands about stock, categories, sizes, colors, prices, sales, daily closing, and product rotation without opening a spreadsheet or database tool.
+Mundo Materno Inventory Assistant is an OpenClaw-powered Telegram inventory and sales helper for a maternity clothing store. It lets the store owner ask natural Spanish commands about stock, categories, sizes, colors, prices, sales, daily closing, and product rotation without opening a spreadsheet or database tool.
 
 The assistant is designed around Yaneth's daily workflow: checking what is available, answering customer questions quickly, registering confirmed sales, seeing what sold today, closing the business day, and receiving recommendations about products that may need restocking or price adjustments.
 
@@ -43,27 +43,45 @@ For commands that need more context, the assistant continues the conversation. F
 
 ## Architecture
 
+OpenClaw is the brain of the operation. Telegram messages are routed into an OpenClaw agent turn, the `mundo-materno-inventory` skill tells the agent how to handle inventory work, and the Python bridge executes trusted inventory operations against the database.
+
 The project is intentionally small and local-first. The core components are:
 
 ```text
-telegram_inventory_bot.py      Telegram polling loop, message handling, inline category buttons
-main.py                        Assistant command parser, conversation state, menu text, response formatting
+telegram_inventory_bot.py      Telegram polling loop that delegates each user message to OpenClaw
+openclaw/mundo-materno-inventory/SKILL.md
+                               OpenClaw skill that defines inventory behavior and bridge usage
+openclaw_inventory_tool.py     Python bridge called by OpenClaw for inventory commands
+main.py                        Inventory command executor, conversation state, menu text, response formatting
 database.py                    Database schema, SQLite/PostgreSQL connection setup, initial product seed
 modules/analisis.py            Inventory, sales, stock, category, rotation, and daily-close queries
 modules/ventas_service.py      Stock updates and sale registration
 modules/product_matcher.py     Product name matching and normalization
 openclaw_guard.py              OpenClaw CLI/config/skill/gateway readiness checks
-openclaw_inventory_tool.py     CLI bridge used by OpenClaw workflows
 env_loader.py                  Local .env loading
 scripts/migrate_sqlite_to_postgres.py
                                Optional migration helper
 ```
 
-OpenClaw is the brain and required runtime gate for the assistant. The project is intentionally built so that if OpenClaw is not working, Mundo Materno does not work.
+The runtime flow is:
+
+```text
+Telegram user
+  -> telegram_inventory_bot.py
+  -> openclaw agent
+  -> mundo-materno-inventory skill
+  -> openclaw_inventory_tool.py
+  -> main.py / modules
+  -> database
+```
+
+The Python code is no longer the conversation brain for Telegram. It is the inventory execution layer that OpenClaw invokes when the agent decides an inventory tool call is needed.
+
+OpenClaw is also the required runtime gate. The project is intentionally built so that if OpenClaw is not working, Mundo Materno does not work.
 
 Every runtime path checks OpenClaw before serving inventory behavior:
 
-- `telegram_inventory_bot.py` checks OpenClaw at startup and before handling messages or callback buttons.
+- `telegram_inventory_bot.py` checks OpenClaw at startup, then delegates messages to `openclaw agent`.
 - `main.py` checks OpenClaw before direct assistant responses and before starting console mode.
 - `openclaw_inventory_tool.py` checks OpenClaw before returning bridge output.
 - `openclaw_guard.py` verifies the OpenClaw CLI, validates configuration, confirms the `mundo-materno-inventory` skill is eligible, and checks that the gateway is listening.
@@ -120,6 +138,15 @@ TELEGRAM_BOT_TOKEN=your_botfather_token
 MUNDO_MATERNO_ALLOW_MUTATIONS=0
 MUNDO_MATERNO_DB_ENGINE=sqlite
 ```
+
+Optional OpenClaw agent controls:
+
+```env
+MUNDO_MATERNO_OPENCLAW_AGENT=
+MUNDO_MATERNO_OPENCLAW_AGENT_TIMEOUT=600
+```
+
+Leave `MUNDO_MATERNO_OPENCLAW_AGENT` empty to use OpenClaw's default routed agent. Set it only if this project should always use a specific OpenClaw agent ID.
 
 Keep `MUNDO_MATERNO_ALLOW_MUTATIONS=0` while the bot is exposed to untrusted users. Set it to `1` only when trusted users should be allowed to change inventory, register sales, start the day, or close the day.
 
