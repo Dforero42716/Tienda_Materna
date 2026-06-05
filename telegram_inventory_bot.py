@@ -22,6 +22,12 @@ LOG_FILE = LOG_DIR / "telegram_bot.log"
 CATEGORY_CALLBACK_PREFIX = "category:"
 OPENCLAW_AGENT_ID = os.environ.get("MUNDO_MATERNO_OPENCLAW_AGENT")
 OPENCLAW_AGENT_TIMEOUT = int(os.environ.get("MUNDO_MATERNO_OPENCLAW_AGENT_TIMEOUT", "600"))
+SESSION_GENERATION_BY_CHAT = {}
+CONTEXT_OVERFLOW_MARKERS = (
+    "Context overflow",
+    "prompt too large",
+    "larger-context model",
+)
 
 
 def setup_logging():
@@ -104,6 +110,20 @@ def send_message(token, chat_id, text, reply_markup=None):
     logger.info("Sent reply chat_id=%s chunks=%s chars=%s", chat_id, len(chunks), len(text))
 
 
+def _session_key_for_chat(chat_id):
+    generation = SESSION_GENERATION_BY_CHAT.get(chat_id, 0)
+    return f"mundo-materno-telegram-{chat_id}-v{generation}"
+
+
+def reset_openclaw_session(chat_id):
+    SESSION_GENERATION_BY_CHAT[chat_id] = SESSION_GENERATION_BY_CHAT.get(chat_id, 0) + 1
+    logger.info("Rotated OpenClaw session chat_id=%s generation=%s", chat_id, SESSION_GENERATION_BY_CHAT[chat_id])
+
+
+def _is_context_overflow(text):
+    return any(marker.lower() in text.lower() for marker in CONTEXT_OVERFLOW_MARKERS)
+
+
 def _extract_agent_text(payload):
     result = payload.get("result") if isinstance(payload, dict) else None
     payloads = result.get("payloads") if isinstance(result, dict) else None
@@ -129,14 +149,14 @@ def _extract_agent_text(payload):
     return "\n".join(lines).strip()
 
 
-def run_openclaw_agent(text, chat_id):
+def run_openclaw_agent(text, chat_id, retry_on_context_overflow=True):
     require_openclaw_ready()
 
     args = [
         openclaw_executable(),
         "agent",
         "--session-key",
-        f"mundo-materno-telegram-{chat_id}",
+        _session_key_for_chat(chat_id),
         "--message",
         text,
         "--json",
@@ -156,6 +176,10 @@ def run_openclaw_agent(text, chat_id):
 
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
+        if retry_on_context_overflow and _is_context_overflow(detail):
+            reset_openclaw_session(chat_id)
+            logger.warning("Retrying OpenClaw agent after context overflow chat_id=%s", chat_id)
+            return run_openclaw_agent(text, chat_id, retry_on_context_overflow=False)
         raise RuntimeError(f"OpenClaw agent failed: {detail}")
 
     stdout = (result.stdout or "").strip()
@@ -169,6 +193,10 @@ def run_openclaw_agent(text, chat_id):
 
     response = _extract_agent_text(payload)
     if response:
+        if retry_on_context_overflow and _is_context_overflow(response):
+            reset_openclaw_session(chat_id)
+            logger.warning("Retrying OpenClaw agent after context overflow response chat_id=%s", chat_id)
+            return run_openclaw_agent(text, chat_id, retry_on_context_overflow=False)
         return response
 
     if isinstance(payload, dict) and payload.get("status") == "in_flight":
@@ -231,6 +259,12 @@ def handle_message(token, message):
     except RuntimeError as exc:
         logger.error("OpenClaw dependency blocked request context=%s error=%s", context, exc)
         send_message(token, chat_id, str(exc))
+        return
+
+    normalized = text.lower().strip()
+    if normalized in {"/reset", "/new", "reset", "nuevo chat", "nueva conversacion"}:
+        reset_openclaw_session(chat_id)
+        send_message(token, chat_id, "Conversacion reiniciada. Escribe hola para empezar de nuevo.")
         return
 
     if text.startswith("/start"):
