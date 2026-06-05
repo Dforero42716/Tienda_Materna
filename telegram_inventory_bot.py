@@ -23,7 +23,7 @@ LOG_DIR = Path(__file__).resolve().parent / "logs"
 LOG_FILE = LOG_DIR / "telegram_bot.log"
 MUTATION_GATE_BYPASSED = False
 CATEGORY_CALLBACK_PREFIX = "category:"
-ASSISTENTES_POR_CHAT = {}
+ASISTENTES_POR_CHAT = {}
 MUTATING_PREFIXES = (
     "vender ",
     "registrar venta ",
