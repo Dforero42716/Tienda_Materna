@@ -7,6 +7,7 @@ import ssl
 import time
 import urllib.parse
 import urllib.request
+import uuid
 
 from env_loader import env_flag_enabled, load_env
 from openclaw_guard import openclaw_executable, require_openclaw_ready
@@ -22,12 +23,14 @@ LOG_FILE = LOG_DIR / "telegram_bot.log"
 CATEGORY_CALLBACK_PREFIX = "category:"
 OPENCLAW_AGENT_ID = os.environ.get("MUNDO_MATERNO_OPENCLAW_AGENT")
 OPENCLAW_AGENT_TIMEOUT = int(os.environ.get("MUNDO_MATERNO_OPENCLAW_AGENT_TIMEOUT", "600"))
-SESSION_GENERATION_BY_CHAT = {}
+SESSION_TOKEN_BY_CHAT = {}
 CONTEXT_OVERFLOW_MARKERS = (
     "Context overflow",
     "prompt too large",
     "larger-context model",
 )
+RESET_COMMANDS = {"/reset", "/new", "reset", "nuevo chat", "nueva conversacion"}
+FRESH_START_COMMANDS = {"/start", "/help", "hola", "menu", "ayuda", "comandos"}
 
 
 def setup_logging():
@@ -111,13 +114,13 @@ def send_message(token, chat_id, text, reply_markup=None):
 
 
 def _session_key_for_chat(chat_id):
-    generation = SESSION_GENERATION_BY_CHAT.get(chat_id, 0)
-    return f"mundo-materno-telegram-{chat_id}-v{generation}"
+    token = SESSION_TOKEN_BY_CHAT.setdefault(chat_id, uuid.uuid4().hex[:12])
+    return f"mundo-materno-telegram-{chat_id}-{token}"
 
 
 def reset_openclaw_session(chat_id):
-    SESSION_GENERATION_BY_CHAT[chat_id] = SESSION_GENERATION_BY_CHAT.get(chat_id, 0) + 1
-    logger.info("Rotated OpenClaw session chat_id=%s generation=%s", chat_id, SESSION_GENERATION_BY_CHAT[chat_id])
+    SESSION_TOKEN_BY_CHAT[chat_id] = uuid.uuid4().hex[:12]
+    logger.info("Rotated OpenClaw session chat_id=%s token=%s", chat_id, SESSION_TOKEN_BY_CHAT[chat_id])
 
 
 def _is_context_overflow(text):
@@ -176,10 +179,12 @@ def run_openclaw_agent(text, chat_id, retry_on_context_overflow=True):
 
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
-        if retry_on_context_overflow and _is_context_overflow(detail):
+        if _is_context_overflow(detail):
             reset_openclaw_session(chat_id)
-            logger.warning("Retrying OpenClaw agent after context overflow chat_id=%s", chat_id)
-            return run_openclaw_agent(text, chat_id, retry_on_context_overflow=False)
+            if retry_on_context_overflow:
+                logger.warning("Retrying OpenClaw agent after context overflow chat_id=%s", chat_id)
+                return run_openclaw_agent(text, chat_id, retry_on_context_overflow=False)
+            return "La conversacion anterior estaba demasiado llena. La reinicie; escribe hola para empezar de nuevo."
         raise RuntimeError(f"OpenClaw agent failed: {detail}")
 
     stdout = (result.stdout or "").strip()
@@ -193,10 +198,12 @@ def run_openclaw_agent(text, chat_id, retry_on_context_overflow=True):
 
     response = _extract_agent_text(payload)
     if response:
-        if retry_on_context_overflow and _is_context_overflow(response):
+        if _is_context_overflow(response):
             reset_openclaw_session(chat_id)
-            logger.warning("Retrying OpenClaw agent after context overflow response chat_id=%s", chat_id)
-            return run_openclaw_agent(text, chat_id, retry_on_context_overflow=False)
+            if retry_on_context_overflow:
+                logger.warning("Retrying OpenClaw agent after context overflow response chat_id=%s", chat_id)
+                return run_openclaw_agent(text, chat_id, retry_on_context_overflow=False)
+            return "La conversacion anterior estaba demasiado llena. La reinicie; escribe hola para empezar de nuevo."
         return response
 
     if isinstance(payload, dict) and payload.get("status") == "in_flight":
@@ -262,15 +269,18 @@ def handle_message(token, message):
         return
 
     normalized = text.lower().strip()
-    if normalized in {"/reset", "/new", "reset", "nuevo chat", "nueva conversacion"}:
+    if normalized in RESET_COMMANDS:
         reset_openclaw_session(chat_id)
-        send_message(token, chat_id, "Conversacion reiniciada. Escribe hola para empezar de nuevo.")
-        return
+        text = "hola"
+        normalized = text
 
-    if text.startswith("/start"):
+    if normalized in FRESH_START_COMMANDS:
+        reset_openclaw_session(chat_id)
+
+    if normalized == "/start":
         text = "hola"
 
-    if text.startswith("/help"):
+    if normalized == "/help":
         text = "ayuda"
 
     response = run_openclaw_agent(text, chat_id)
