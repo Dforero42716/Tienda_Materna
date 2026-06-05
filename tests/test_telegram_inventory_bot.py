@@ -102,6 +102,36 @@ class TelegramInventoryBotTests(unittest.TestCase):
         self.assertIn("Comandos disponibles", sent[0][1])
         agent.assert_not_called()
 
+    def test_known_inventory_command_uses_local_path_without_agent(self):
+        sent = []
+        message = {
+            "message_id": 1,
+            "chat": {"id": 123, "type": "private"},
+            "from": {"id": 456, "first_name": "Marycruz"},
+            "text": "producto mas vendido",
+        }
+
+        with patch.object(bot, "require_openclaw_ready", return_value="ok"), \
+             patch.object(bot, "run_local_inventory_command", return_value="Producto mas vendido OK") as local, \
+             patch.object(bot, "run_openclaw_agent") as agent, \
+             patch.object(bot, "send_message", side_effect=lambda _token, chat_id, text, reply_markup=None: sent.append((chat_id, text))):
+            bot.handle_message("token", message)
+
+        self.assertEqual(sent, [(123, "Producto mas vendido OK")])
+        local.assert_called_once_with("producto mas vendido", 123)
+        agent.assert_not_called()
+
+    def test_send_message_strips_markdown_markers(self):
+        sent_payloads = []
+
+        with patch.object(bot, "telegram_request", side_effect=lambda _token, _method, payload=None: sent_payloads.append(payload) or {"ok": True}):
+            bot.send_message("token", 123, "El ganador es **Blusa lactancia** con `6` unidades")
+
+        self.assertEqual(
+            sent_payloads[0]["text"],
+            "El ganador es Blusa lactancia con 6 unidades",
+        )
+
     def test_telegram_request_translates_409_conflict(self):
         error = urllib.error.HTTPError(
             url="https://api.telegram.org/botTOKEN/getUpdates",

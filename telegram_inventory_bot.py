@@ -2,6 +2,7 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+import re
 import subprocess
 import ssl
 import time
@@ -11,7 +12,7 @@ import urllib.error
 import uuid
 
 from env_loader import env_flag_enabled, load_env
-from main import AsistenteInventario, COMANDOS_DISPONIBLES
+from main import AsistenteInventario, COMANDOS_DISPONIBLES, _normalizar_comandos
 from openclaw_guard import openclaw_executable, require_openclaw_ready
 
 import os
@@ -34,6 +35,46 @@ CONTEXT_OVERFLOW_MARKERS = (
 )
 RESET_COMMANDS = {"/reset", "/new", "reset", "nuevo chat", "nueva conversacion"}
 FRESH_START_COMMANDS = {"/start", "/help", "hola", "menu", "ayuda", "comandos"}
+LOCAL_COMMAND_MARKERS = (
+    "agregar stock",
+    "agregar unidades",
+    "agotados",
+    "alerta",
+    "abrir dia",
+    "capital",
+    "categorias",
+    "cerrar dia",
+    "cuanto he ganado",
+    "cuantos",
+    "empezar dia",
+    "ganancias",
+    "historial",
+    "ingresos",
+    "iniciar dia",
+    "lista de categorias",
+    "producto mas barato",
+    "producto mas caro",
+    "producto mas vendido",
+    "producto menos vendido",
+    "productos de categoria",
+    "productos de la categoria",
+    "productos de proveedor",
+    "productos en color",
+    "productos en talla",
+    "productos entre",
+    "proveedor principal",
+    "recomendacion",
+    "recomendaciones",
+    "reposicion",
+    "stock bajo",
+    "top mas stock",
+    "top menos stock",
+    "total productos",
+    "valor inventario",
+    "vender",
+    "ventas de",
+    "ventas de hoy",
+)
 
 
 class TelegramConflictError(RuntimeError):
@@ -136,6 +177,7 @@ def clear_telegram_webhook(token):
 
 
 def send_message(token, chat_id, text, reply_markup=None):
+    text = format_telegram_text(text)
     max_len = 3900
     chunks = [text[i:i + max_len] for i in range(0, len(text), max_len)] or [text]
     for index, chunk in enumerate(chunks):
@@ -144,6 +186,15 @@ def send_message(token, chat_id, text, reply_markup=None):
             payload["reply_markup"] = reply_markup
         telegram_request(token, "sendMessage", payload)
     logger.info("Sent reply chat_id=%s chunks=%s chars=%s", chat_id, len(chunks), len(text))
+
+
+def format_telegram_text(text):
+    text = str(text)
+    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+    text = re.sub(r"__(.*?)__", r"\1", text)
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    text = text.replace("### ", "").replace("## ", "").replace("# ", "")
+    return text.strip()
 
 
 def _session_key_for_chat(chat_id):
@@ -166,11 +217,31 @@ def build_menu_response(message):
     return f"👋 Hola{name}, soy tu asistente personal. Dime que quieres hacer:\n\n{COMANDOS_DISPONIBLES}"
 
 
+def _local_assistant_for_chat(chat_id):
+    return LOCAL_FALLBACK_BY_CHAT.setdefault(chat_id, AsistenteInventario())
+
+
+def _should_use_local_inventory(text, chat_id):
+    assistant = LOCAL_FALLBACK_BY_CHAT.get(chat_id)
+    if assistant is not None and getattr(assistant, "pendiente", None):
+        return True
+
+    normalized = _normalizar_comandos(text.lower().strip())
+    if normalized in {"si", "s", "no", "n", "cancelar"}:
+        return assistant is not None
+    return any(marker in normalized for marker in LOCAL_COMMAND_MARKERS)
+
+
+def run_local_inventory_command(text, chat_id):
+    require_openclaw_ready()
+    logger.info("Using local inventory command path chat_id=%s text=%r", chat_id, text)
+    return _local_assistant_for_chat(chat_id).responder(text)
+
+
 def run_local_inventory_fallback(text, chat_id, reason):
     require_openclaw_ready()
     logger.warning("Using local inventory fallback chat_id=%s reason=%s", chat_id, reason)
-    assistant = LOCAL_FALLBACK_BY_CHAT.setdefault(chat_id, AsistenteInventario())
-    return assistant.responder(text)
+    return _local_assistant_for_chat(chat_id).responder(text)
 
 
 def _extract_agent_text(payload):
@@ -289,7 +360,7 @@ def handle_callback_query(token, callback_query):
     if data.startswith(CATEGORY_CALLBACK_PREFIX):
         category = data[len(CATEGORY_CALLBACK_PREFIX):].strip()
         logger.info("Category callback chat_id=%s category=%r", chat_id, category)
-        response = run_openclaw_agent(f"productos de la categoria {category}", chat_id)
+        response = run_local_inventory_command(f"productos de la categoria {category}", chat_id)
         send_message(token, chat_id, response)
         return
 
@@ -330,7 +401,10 @@ def handle_message(token, message):
         send_message(token, chat_id, response)
         return
 
-    response = run_openclaw_agent(text, chat_id)
+    if _should_use_local_inventory(text, chat_id):
+        response = run_local_inventory_command(text, chat_id)
+    else:
+        response = run_openclaw_agent(text, chat_id)
     logger.info("Inventory response chat_id=%s chars=%s", chat_id, len(response))
     send_message(token, chat_id, response)
 

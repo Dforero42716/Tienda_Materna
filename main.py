@@ -286,15 +286,22 @@ def _respuesta_extremos(desc=True):
     globales, por_categoria = productos_vendidos_extremos(desc=desc)
     titulo = "Productos mas vendidos:" if desc else "Productos menos vendidos:"
     lineas = [titulo]
+    if desc:
+        globales = [item for item in globales if item[2] > 0]
+        por_categoria = [item for item in por_categoria if item[2] > 0]
+        if not globales:
+            return "No hay ventas registradas todavia."
+
     lineas.extend(
         f"   {nombre} - {total} unidades vendidas"
         for nombre, _, total in globales
     )
     if not globales:
         lineas.append("   Sin ventas - 0 unidades vendidas")
-    lineas.append("")
-    lineas.append("Por categoria:")
-    lineas.extend(f"   {categoria}: {nombre} - {total} unidades" for categoria, nombre, total in por_categoria)
+    if por_categoria:
+        lineas.append("")
+        lineas.append("Por categoria:")
+        lineas.extend(f"   {categoria}: {nombre} - {total} unidades" for categoria, nombre, total in por_categoria)
     return "\n".join(lineas)
 
 
