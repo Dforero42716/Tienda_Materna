@@ -85,21 +85,21 @@ FORMATO_VENTA = (
     "Ejemplo: vender 2 blusa lactancia manga larga"
 )
 
-MENSAJE_BIENVENIDA = "Hola Yaneth, soy tu asistente personal. Dime que quieres hacer:"
+MENSAJE_BIENVENIDA = "👋 Hola Yaneth, soy tu asistente personal. Dime que quieres hacer:"
 
 COMANDOS_DISPONIBLES = (
-    "Comandos disponibles:\n"
-    "cuantos productos hay - te digo cuantos productos por categoria y total\n"
-    "ventas de hoy - te muestro todo lo vendido hoy\n"
-    "[nombre de categoria] - para ver todos los productos de ese tipo (ej: Vestidos)\n"
-    "productos en talla [S, M, L o XL] - te muestro que hay disponible en esa talla\n"
-    "productos en color [color] - te muestro que hay disponible en ese color\n"
-    "producto mas vendido - te digo cual producto se ha vendido mas y cuantas unidades\n"
-    "producto menos vendido - te digo cual producto se ha vendido menos\n"
-    "registrar venta - escribelo asi: vender 2 blusa lactancia\n"
-    "ventas de un dia especifico - escribelo asi: ventas del 3 de junio de 2026\n"
-    "cerrar dia - guarda el resumen del dia y cierra la jornada\n"
-    "recomendaciones - consejos sobre que productos pedir mas y cuales bajar de precio"
+    "📋 Comandos disponibles:\n"
+    "📦 cuantos productos hay - te digo cuantos productos por categoria y total\n"
+    "🧾 ventas de hoy - te muestro todo lo vendido hoy\n"
+    "🏷️ [nombre de categoria] - para ver todos los productos de ese tipo (ej: Vestidos)\n"
+    "📏 productos en talla [S, M, L o XL] - te muestro que hay disponible en esa talla\n"
+    "🎨 productos en color [color] - te muestro que hay disponible en ese color\n"
+    "🏆 producto mas vendido - te digo cual producto se ha vendido mas y cuantas unidades\n"
+    "📉 producto menos vendido - te digo cual producto se ha vendido menos\n"
+    "💰 registrar venta - escribelo asi: vender 2 blusa lactancia\n"
+    "📅 ventas de un dia especifico - escribelo asi: ventas del 3 de junio de 2026\n"
+    "🔒 cerrar dia - guarda el resumen del dia y cierra la jornada\n"
+    "💡 recomendaciones - consejos sobre que productos pedir mas y cuales bajar de precio"
 )
 
 MENSAJE_COMANDOS = f"{MENSAJE_BIENVENIDA}\n\n{COMANDOS_DISPONIBLES}"
